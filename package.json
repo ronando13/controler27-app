@@ -1,0 +1,7 @@
+{
+  "name": "controler27-pro",
+  "version": "2.0.0-beta",
+  "description": "Controler27 PRO v2.00b - gestão de cartões (Vercel + banco no GitHub)",
+  "private": true,
+  "type": "module"
+}
