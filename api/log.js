@@ -1,6 +1,6 @@
 // POST /api/log -> recebe o log de uso do app e envia para os Logs da Vercel (Project > Logs).
 // Não grava arquivo (a Vercel não tem disco) e ignora os "heartbeats" para não poluir.
-import { env, noStore, json, readJson, readSession } from './_lib.js';
+import { env, authConfigured, noStore, json, readJson, readSession } from './_lib.js';
 
 export default async function handler(req, res) {
   noStore(res);

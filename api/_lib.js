@@ -4,16 +4,28 @@ import crypto from 'node:crypto';
 export const COOKIE_NAME = 'c27_session';
 export const SESSION_DAYS = 90;
 
+// Credencial do servidor (login único = senha do aplicativo):
+//   APP_PROOF_HASH  (recomendado) -> hash da "prova" derivada da senha; a senha não fica na Vercel
+//   APP_PASSWORD    (alternativa) -> a própria senha do aplicativo
+export const OWNER = 'owner';
+export const PROOF_SALT = 'controler27-server-auth-v1';
+export const PROOF_ITER = 150000;
+
 export function env() {
+  const proofHash = String(process.env.APP_PROOF_HASH || '').trim().toLowerCase();
+  const password = process.env.APP_PASSWORD || '';
   return {
-    user: String(process.env.APP_USER || 'admin').trim().toLowerCase(),
-    password: process.env.APP_PASSWORD || '',
-    secret: process.env.SESSION_SECRET || process.env.APP_PASSWORD || '',
+    proofHash,
+    password,
+    secret: process.env.SESSION_SECRET || proofHash || password,
     ghToken: process.env.GITHUB_TOKEN || '',
     ghRepo: process.env.GITHUB_REPO || '',
     ghBranch: process.env.GITHUB_BRANCH || 'main',
     dbPath: process.env.DB_FILE_PATH || 'controler27_bd.json'
   };
+}
+export function authConfigured(cfg) {
+  return !!((cfg.proofHash || cfg.password) && cfg.secret);
 }
 
 // ------------------------------------------------------------------ respostas
@@ -65,6 +77,19 @@ export function safeEqual(a, b) {
   const hb = crypto.createHash('sha256').update(String(b)).digest();
   return crypto.timingSafeEqual(ha, hb);
 }
+// Confere a prova enviada pelo app (PBKDF2 da senha, calculada no navegador).
+export function checkProof(cfg, proof) {
+  proof = String(proof || '');
+  if (!proof || proof.length > 200) return false;
+  if (cfg.proofHash) {
+    return safeEqual(crypto.createHash('sha256').update(proof).digest('hex'), cfg.proofHash);
+  }
+  if (cfg.password) {
+    const expected = crypto.pbkdf2Sync(cfg.password.trim(), PROOF_SALT, PROOF_ITER, 32, 'sha256').toString('base64');
+    return safeEqual(proof, expected);
+  }
+  return false;
+}
 function parseCookies(header) {
   const out = {};
   String(header || '').split(';').forEach(p => {
@@ -78,7 +103,7 @@ function sign(payload, secret) {
 }
 export function newSessionValue(cfg) {
   const payload = Buffer.from(JSON.stringify({
-    u: cfg.user,
+    u: OWNER,
     exp: Date.now() + SESSION_DAYS * 86400e3,
     n: crypto.randomBytes(6).toString('hex')
   })).toString('base64url');
@@ -98,7 +123,7 @@ export function readSession(req, cfg) {
   try {
     const d = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!d.exp || Date.now() > d.exp) return null;
-    if (d.u !== cfg.user) return null; // trocar APP_USER invalida as sessões antigas
+    if (d.u !== OWNER) return null;
     return d;
   } catch (_) { return null; }
 }

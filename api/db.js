@@ -1,13 +1,13 @@
 // GET  /api/db  -> devolve o arquivo do banco (já criptografado pelo app) do repositório do GitHub
 // POST /api/db  -> grava o banco no GitHub (com as mesmas travas do servidor antigo)
-import { env, noStore, json, readJson, readSession, ghRead, ghWrite } from './_lib.js';
+import { env, authConfigured, noStore, json, readJson, readSession, ghRead, ghWrite } from './_lib.js';
 
 export default async function handler(req, res) {
   noStore(res);
   const cfg = env();
 
-  if (!cfg.password || !cfg.secret) {
-    return json(res, 500, { error: 'Servidor sem APP_PASSWORD configurada na Vercel.' });
+  if (!authConfigured(cfg)) {
+    return json(res, 500, { error: 'Servidor sem APP_PROOF_HASH (ou APP_PASSWORD) configurado na Vercel.' });
   }
   if (!readSession(req, cfg)) {
     return json(res, 401, { error: 'Não autorizado. Faça login novamente.' });
