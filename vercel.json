@@ -2,13 +2,9 @@
   "version": 2,
   "outputDirectory": "public",
   "functions": {
-    "api/app.js": { "includeFiles": "private/**" },
     "api/db.js": { "maxDuration": 30 }
   },
   "rewrites": [
-    { "source": "/", "destination": "/api/app" },
-    { "source": "/index.html", "destination": "/api/app" },
-    { "source": "/login", "destination": "/api/auth?a=login" },
     { "source": "/logout", "destination": "/api/auth?a=logout" },
     { "source": "/api/me", "destination": "/api/auth?a=me" }
   ],

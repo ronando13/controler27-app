@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Controler27 - Gerar credencial do servidor</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.25rem;background:#0b1220;color:#e5e7eb;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .card{width:100%;max-width:520px;background:#111a2e;border:1px solid #1f2b45;border-radius:18px;padding:1.5rem}
+  h1{margin:0 0 .35rem;font-size:1.15rem} p{margin:.4rem 0;font-size:13px;color:#9ca3af;line-height:1.5}
+  label{display:block;margin:1rem 0 .35rem;font-size:12px;font-weight:700;color:#9ca3af}
+  input{width:100%;box-sizing:border-box;padding:.7rem .85rem;border-radius:10px;border:1px solid #26344f;background:#0b1220;color:#f3f4f6;font:14px ui-monospace,Menlo,Consolas,monospace}
+  button{margin-top:1rem;padding:.7rem 1.1rem;border:0;border-radius:10px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(90deg,#1d4ed8,#4f46e5)}
+  button.sec{background:#1f2b45;margin-left:.4rem}
+  .ok{color:#6ee7b7}.err{color:#fda4af}
+  code{background:#0b1220;padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Gerar credencial do servidor</h1>
+  <p>Digite a <strong>senha do aplicativo</strong> (a que abre o banco). O resultado é o valor da variável <code>APP_PROOF_HASH</code> na Vercel.</p>
+  <p>Tudo é calculado <strong>neste navegador</strong>, sem internet. A senha não é enviada nem gravada em lugar nenhum.</p>
+  <label for="pw">Senha do aplicativo</label>
+  <input id="pw" type="password" autocomplete="off" spellcheck="false">
+  <button id="go" type="button">Gerar</button>
+  <label for="out">APP_PROOF_HASH</label>
+  <input id="out" readonly placeholder="aparece aqui">
+  <button id="copy" type="button" class="sec">Copiar</button>
+  <p id="msg"></p>
+</div>
+<script>
+async function proofHash(pw) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: enc.encode('controler27-server-auth-v1'), iterations: 150000, hash: 'SHA-256' }, key, 256));
+  let bin = ''; bits.forEach(b => bin += String.fromCharCode(b));
+  const proof = btoa(bin);
+  const dig = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(proof)));
+  return Array.from(dig).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const $ = id => document.getElementById(id);
+$('go').onclick = async () => {
+  const msg = $('msg'); msg.className = ''; msg.textContent = '';
+  const pw = $('pw').value.trim();
+  if (!pw) { msg.className = 'err'; msg.textContent = 'Digite a senha.'; return; }
+  if (!(window.crypto && crypto.subtle)) { msg.className = 'err'; msg.textContent = 'Este navegador não permite WebCrypto aqui. Abra em Chrome/Edge/Firefox atualizado.'; return; }
+  msg.textContent = 'Calculando...';
+  try { $('out').value = await proofHash(pw); msg.className = 'ok'; msg.textContent = 'Pronto. Cole este valor em APP_PROOF_HASH na Vercel.'; }
+  catch (e) { msg.className = 'err'; msg.textContent = 'Falha ao calcular: ' + e.message; }
+};
+$('copy').onclick = async () => { const v = $('out').value; if (!v) return; try { await navigator.clipboard.writeText(v); $('msg').className = 'ok'; $('msg').textContent = 'Copiado!'; } catch (_) { $('out').select(); } };
+</script>
+</body>
+</html>
