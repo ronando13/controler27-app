@@ -11,6 +11,31 @@ export const OWNER = 'owner';
 export const PROOF_SALT = 'controler27-server-auth-v1';
 export const PROOF_ITER = 150000;
 
+// Best-effort per-instance throttling. For a distributed deployment, pair this with
+// Vercel Firewall / an external rate-limit store; serverless instances are ephemeral.
+const loginAttempts = new Map();
+export function loginRateLimit(req) {
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = String(req.headers?.['x-real-ip'] || forwarded || 'unknown').slice(0, 80);
+  const now = Date.now();
+  let rec = loginAttempts.get(ip);
+  if (!rec || now - rec.started > 15 * 60 * 1000) rec = { started: now, count: 0, blockedUntil: 0 };
+  if (rec.blockedUntil > now) { loginAttempts.set(ip, rec); return { allowed: false, retryAfter: Math.ceil((rec.blockedUntil - now) / 1000) }; }
+  return { allowed: true, ip, rec };
+}
+export function loginRateFail(state) {
+  if (!state?.rec) return;
+  const rec = state.rec; rec.count += 1;
+  if (rec.count >= 5) rec.blockedUntil = Date.now() + Math.min(30 * 60 * 1000, 30 * 1000 * (2 ** Math.min(6, rec.count - 5)));
+  loginAttempts.set(state.ip, rec);
+  if (loginAttempts.size > 2000) {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [k, v] of loginAttempts) if (v.started < cutoff || v.blockedUntil < Date.now()) loginAttempts.delete(k);
+  }
+}
+export function loginRateSuccess(state) { if (state?.ip) loginAttempts.delete(state.ip); }
+
+
 export function env() {
   const proofHash = String(process.env.APP_PROOF_HASH || '').trim().toLowerCase();
   const password = process.env.APP_PASSWORD || '';
@@ -46,14 +71,16 @@ export function redirect(res, location, status = 302) {
 }
 
 // ------------------------------------------------------------------ corpo da requisição
-export async function readRaw(req) {
+export async function readRaw(req, maxBytes = 4 * 1024 * 1024) {
   if (req.body !== undefined && req.body !== null) {
-    if (Buffer.isBuffer(req.body)) return req.body.toString('utf8');
-    if (typeof req.body === 'string') return req.body;
+    if (Buffer.isBuffer(req.body)) { if (req.body.length > maxBytes) throw new Error('BODY_TOO_LARGE'); return req.body.toString('utf8'); }
+    if (typeof req.body === 'string') { if (Buffer.byteLength(req.body) > maxBytes) throw new Error('BODY_TOO_LARGE'); return req.body; }
+    const encoded = JSON.stringify(req.body);
+    if (Buffer.byteLength(encoded) > maxBytes) throw new Error('BODY_TOO_LARGE');
     return req.body; // já veio como objeto
   }
-  const chunks = [];
-  for await (const c of req) chunks.push(c);
+  const chunks = []; let size = 0;
+  for await (const c of req) { size += c.length; if (size > maxBytes) throw new Error('BODY_TOO_LARGE'); chunks.push(c); }
   return Buffer.concat(chunks).toString('utf8');
 }
 export async function readJson(req) {
@@ -61,7 +88,7 @@ export async function readJson(req) {
     const raw = await readRaw(req);
     if (raw && typeof raw === 'object') return raw;
     return JSON.parse(String(raw || ''));
-  } catch (_) { return null; }
+  } catch (err) { if (err?.message === 'BODY_TOO_LARGE') throw err; return null; }
 }
 export async function readForm(req) {
   try {

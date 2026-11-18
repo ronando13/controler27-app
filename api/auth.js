@@ -4,7 +4,7 @@
 //   GET  /logout                           -> apaga o cookie e volta para /
 import {
   env, authConfigured, noStore, json, redirect, readJson, readSession, checkProof,
-  newSessionValue, sessionCookie, SESSION_DAYS
+  newSessionValue, sessionCookie, SESSION_DAYS, loginRateLimit, loginRateFail, loginRateSuccess
 } from './_lib.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -38,12 +38,23 @@ export default async function handler(req, res) {
     if (!authConfigured(cfg)) {
       return json(res, 500, { error: 'Servidor sem APP_PROOF_HASH (ou APP_PASSWORD) configurado na Vercel.' });
     }
-    const body = await readJson(req);
+    const rate = loginRateLimit(req);
+    if (!rate.allowed) {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+      return json(res, 429, { error: 'Muitas tentativas. Aguarde antes de tentar novamente.', retryAfter: rate.retryAfter });
+    }
+    let body;
+    try { body = await readJson(req); } catch (err) {
+      if (err?.message === 'BODY_TOO_LARGE') return json(res, 413, { error: 'Requisição excede o limite permitido.' });
+      throw err;
+    }
     if (body && checkProof(cfg, body.proof)) {
+      loginRateSuccess(rate);
       res.setHeader('Set-Cookie', sessionCookie(newSessionValue(cfg), SESSION_DAYS * 86400));
       console.log('[c27log]', JSON.stringify({ t: Date.now(), e: 'server_login_ok' }));
       return json(res, 200, { ok: true });
     }
+    loginRateFail(rate);
     console.log('[c27log]', JSON.stringify({ t: Date.now(), e: 'server_login_fail' }));
     await sleep(900); // freia tentativas em série
     return json(res, 401, { error: 'Credencial recusada.' });

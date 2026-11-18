@@ -2175,10 +2175,10 @@
             <div class="scale-90">${getBrandSVG(card.brand)}</div>
             <div>
               <div class="font-bold text-xs text-theme-main flex items-center gap-1.5">
-                <span>${card.name}</span>
-                <span class="text-[9px] font-mono text-theme-muted bg-theme-card px-1.5 py-0.2 rounded border border-theme">D${card.dueDay || 5}</span>
+                <span>${escapeHtml(card.name)}</span>
+                <span class="text-[9px] font-mono text-theme-muted bg-theme-card px-1.5 py-0.2 rounded border border-theme">D${escapeHtml(card.dueDay || 5)}</span>
               </div>
-              <div class="text-[10px] text-theme-muted mt-0.5">${card.holder} | Limite: ${formatCurrency(limit)}</div>
+              <div class="text-[10px] text-theme-muted mt-0.5">${escapeHtml(card.holder)} | Limite: ${formatCurrency(limit)}</div>
               <div class="mt-1 flex items-center gap-1.5 flex-wrap">${statusPill(st)}<span class="text-[9px] font-mono text-theme-muted">Fecha ${fmtDM(st.closing)} · Vence ${fmtDM(st.due)}</span></div>
             </div>
           </div>
@@ -2294,6 +2294,9 @@
     // =====================================================================
     // UTILITÁRIOS
     // =====================================================================
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
     function parseMoneyBR(v) {
       const s = String(v == null ? '' : v).replace(/\s|R\$/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
       const n = parseFloat(s);
@@ -2417,8 +2420,8 @@
       return pbkdf2Sha256JS(enc, saltU8, iters);
     }
     function c27RandomBytes(n) {
-      if (window.crypto && crypto.getRandomValues) return crypto.getRandomValues(new Uint8Array(n));
-      return Uint8Array.from({ length: n }, () => Math.floor(Math.random() * 256));
+      if (!(window.crypto && crypto.getRandomValues)) throw new Error('CRYPTO_UNAVAILABLE');
+      return crypto.getRandomValues(new Uint8Array(n));
     }
 
     // =====================================================================
@@ -2429,13 +2432,14 @@
     const C27 = { key: null, ksalt: null, pw: null };
     window.C27 = C27;
     async function c27DeriveKey(pw, ksaltB64) {
+      if (!C27_HAS_SUBTLE) throw new Error('NOCRYPTO');
       const raw = await c27Pbkdf2('c27-data|' + pw, b64ToU8(ksaltB64), 100000);
       C27.key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
       C27.ksalt = ksaltB64;
       try { sessionStorage.setItem('controler27_dk', JSON.stringify({ k: u8ToB64(raw), s: ksaltB64 })); } catch (_) {}
     }
     async function c27RestoreSessionKey() {
-      if (!C27_HAS_SUBTLE) return true;
+      if (!C27_HAS_SUBTLE) return false;
       try {
         const d = JSON.parse(sessionStorage.getItem('controler27_dk') || 'null');
         if (!d || !d.k || !d.s) return false;
@@ -2445,7 +2449,7 @@
       } catch (_) { return false; }
     }
     async function c27Seal(obj) {
-      if (!C27.key) return obj; // sem WebCrypto: mantém texto puro (aviso exibido no login)
+      if (!C27_HAS_SUBTLE || !C27.key || !C27.ksalt) throw new Error('NOCRYPTO'); // falha fechada: nunca grava dados sem criptografia
       const iv = c27RandomBytes(12);
       const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, C27.key, new TextEncoder().encode(JSON.stringify(obj))));
       return { v: 2, enc: 'aes-gcm-256', ksalt: C27.ksalt, iv: u8ToB64(iv), data: u8ToB64(ct), updatedAt: obj.updatedAt || 0 };
@@ -2589,7 +2593,7 @@
         if (seen.has(id)) add('erro', `ID repetido "${id}" em ${seen.get(id)} e ${n}`); else seen.set(id, n);
       }));
       const cardIds = new Set(cards.map(c => String(c.id)));
-      cards.forEach(c => { if (!fin(Number(c.limit)) || Number(c.limit) < 0) add('erro', `Cartão "${c.name}" com limite inválido`); });
+      cards.forEach(c => { if (!fin(Number(c.limit)) || Number(c.limit) < 0) add('erro', `Cartão "${escapeHtml(c.name)}" com limite inválido`); });
       txs.forEach(t => {
         const amt = Number(t.amount);
         if (!fin(amt) || amt === 0) add('erro', `Lançamento "${t.description}" (${t.date}) com valor inválido`);
@@ -2620,13 +2624,13 @@
       reimbs.forEach(r => {
         const amt = Number(r.amount);
         if (!fin(amt) || amt <= 0) add('erro', `Reembolso de ${r.buyerName || '?'} com valor inválido`);
-        if (!String(r.buyerName || '').trim()) add('erro', `Reembolso ${r.id} sem comprador`);
+        if (!String(r.buyerName || '').trim()) add('erro', `Reembolso ${escapeHtml(jsq(r.id))} sem comprador`);
         if (r.v === 2) {
-          if (r.dueKey == null || !/^\d{4}-\d{2}$/.test(r.referenceMonth || '')) add('erro', `Reembolso ${r.id} sem fatura/vencimento válidos`);
+          if (r.dueKey == null || !/^\d{4}-\d{2}$/.test(r.referenceMonth || '')) add('erro', `Reembolso ${escapeHtml(jsq(r.id))} sem fatura/vencimento válidos`);
           else if (!txs.some(t => t.isThirdParty && buyerKeyOf(t.thirdPartyName) === buyerKeyOf(r.buyerName) && t.invoiceMonth === r.referenceMonth && String(txDueKey(t)) === String(r.dueKey)))
-            add('aviso', `Reembolso de ${r.buyerName} (${r.referenceMonth}, venc. ${r.dueKey}) sem cobrança correspondente`);
+            add('aviso', `Reembolso de ${escapeHtml(r.buyerName)} (${r.referenceMonth}, venc. ${r.dueKey}) sem cobrança correspondente`);
         } else {
-          (r.clearedTransactionIds || []).forEach(id => { if (!txIds.has(String(id))) add('aviso', `Reembolso antigo de ${r.buyerName} cita lançamento inexistente (${id})`); });
+          (r.clearedTransactionIds || []).forEach(id => { if (!txIds.has(String(id))) add('aviso', `Reembolso antigo de ${escapeHtml(r.buyerName)} cita lançamento inexistente (${id})`); });
         }
       });
       return out;
@@ -2659,7 +2663,10 @@
           if (!res.ok) { sawError = true; continue; }
           let json = null;
           try { json = await res.json(); } catch (_) { sawError = true; continue; }
-          if (json && (json.enc || json.cards || json.transactions || json.financialData)) { dbUrlOk = u; remoteState = 'ok'; return json; }
+          if (json && (json.enc || json.cards || json.transactions || json.financialData)) {
+            if (res.headers.get('X-C27-Legacy-Plaintext') === '1') json._legacyPlaintext = true;
+            dbUrlOk = u; remoteState = 'ok'; return json;
+          }
           sawError = true;
         } catch (_) { sawError = true; }
       }
@@ -2790,6 +2797,7 @@
         const r = await fetch('/api/auth?a=login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ proof }) });
         if (r.ok) { window.C27_SERVER_AUTH = true; return 'ok'; }
         if (r.status === 401) return 'refused';
+        if (r.status === 429) return 'rate_limited';
         return r.status >= 500 ? 'error' : 'offline';
       } catch (_) { return 'offline'; }
     }
@@ -2834,11 +2842,13 @@
       const sa = await c27ServerAuth(pw);
       if (sa === 'refused') return { ok: false, code: 'servidor_recusou', reason: 'O servidor não aceitou esta senha. Use a senha do banco (a mesma da credencial configurada na Vercel).' };
       if (sa === 'error') return { ok: false, code: 'servidor_config', reason: 'O servidor ainda não tem a credencial configurada (APP_PROOF_HASH ou APP_PASSWORD na Vercel).' };
+      if (sa === 'rate_limited') return { ok: false, code: 'limite_tentativas', reason: 'Muitas tentativas de login. Aguarde alguns minutos antes de tentar novamente.' };
       const env = await fetchRemoteEnvelope();
       if (!env) {
         if (remoteState === 'missing') return { ok: true, code: 'banco_novo' };
         return { ok: false, code: 'servidor', reason: 'Não foi possível consultar o servidor agora. Tente novamente em instantes.' };
       }
+      if (!env.enc && env._legacyPlaintext === true) return { ok: true, code: 'migracao_legado' };
       if (!env.enc) return { ok: false, code: 'banco_sem_cripto', reason: 'Já existe um banco gravado para este usuário do servidor. Acesso negado: peça ao administrador.' };
       if (await c27PwOpensEnvelope(env, pw)) return { ok: true, code: 'senha_confere' };
       return { ok: false, code: 'senha_nao_confere', reason: 'Já existe um banco para este usuário e a senha informada não o abre. Acesso negado.' };
@@ -2878,7 +2888,7 @@
       const opt = (ym, title, sub) => `<label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-theme bg-theme-card cursor-pointer hover:border-amber-500/60">
           <input type="radio" name="txClosedChoice" value="${ym}" class="mt-0.5 accent-blue-600" onchange="chooseClosedInvoiceMonth('${ym}')">
           <span class="text-[11.5px] leading-snug"><b class="text-theme-main">${title}</b><br><span class="text-theme-muted">${sub}</span></span></label>`;
-      let html = `<p class="text-xs font-bold text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-circle-question"></i> ${card.name} tem fatura FECHADA e ainda não paga. Em qual fatura lançar esta compra?</p><div class="grid gap-2">`;
+      let html = `<p class="text-xs font-bold text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-circle-question"></i> ${escapeHtml(card.name)} tem fatura FECHADA e ainda não paga. Em qual fatura lançar esta compra?</p><div class="grid gap-2">`;
       closed.forEach(c => {
         const dt = getInvoiceDates(card, c.ym);
         html += opt(c.ym, `Fatura de ${formatMonthLabel(c.ym)} (fechada, não paga)`, `Fechou em ${fmt(dt.closing)} · vence em ${fmt(dt.due)} · em aberto ${formatCurrency(c.total)}. A compra entra nesta fatura.`);
@@ -3634,11 +3644,11 @@
       container.innerHTML = "";
       appData.cards.forEach(card => {
         const btn = document.createElement("button");
-        btn.id = `tabBtn-${card.id}`;
+        btn.id = `tabBtn-${escapeHtml(jsq(card.id))}`;
         btn.className = "tab-btn px-3 py-1.5 text-xs font-semibold rounded-xl bg-theme-subcard text-theme-muted border border-theme hover:text-theme-main transition flex items-center gap-1.5 whitespace-nowrap shadow-sm cursor-pointer";
         btn.innerHTML = `
           <div class="h-3.5 flex items-center scale-90">${getBrandSVG(card.brand)}</div>
-          <span>${card.name}</span>
+          <span>${escapeHtml(card.name)}</span>
         `;
         btn.onclick = () => switchCardTab(card.id);
         container.appendChild(btn);
@@ -3746,7 +3756,7 @@
       theadRow.innerHTML = `
         <th class="py-2.5 px-2 font-bold text-theme-main border-b border-theme align-bottom truncate text-[9.5px]">Pessoa</th>
         ${appData.cards.map(c => `
-          <th class="py-2.5 px-1 text-right font-semibold text-theme-main border-b border-theme align-bottom" title="${c.name}">
+          <th class="py-2.5 px-1 text-right font-semibold text-theme-main border-b border-theme align-bottom" title="${escapeHtml(c.name)}">
             <div class="flex flex-col items-end justify-end">
               <span class="scale-65 origin-right opacity-90 leading-none -mb-0.5">${getBrandSVG(c.brand)}</span>
               <span class="text-[9px] font-bold text-theme-main leading-tight truncate max-w-full block">${getShortCardName(c.name)}</span>
@@ -3809,10 +3819,10 @@
           }).join('');
 
           tr.innerHTML = `
-            <td class="py-2 px-2 font-bold text-theme-main truncate text-[10px]" title="${person}">
+            <td class="py-2 px-2 font-bold text-theme-main truncate text-[10px]" title="${escapeHtml(person)}">
               <div class="flex items-center gap-1.5 truncate">
                 <span class="w-1.5 h-1.5 rounded-full ${person === defaultPersonName ? 'bg-blue-500' : 'bg-amber-500'} flex-shrink-0"></span>
-                <span class="truncate tracking-tight">${person}</span>
+                <span class="truncate tracking-tight">${escapeHtml(person)}</span>
               </div>
             </td>
             ${cardCells}
@@ -3862,7 +3872,7 @@
               <div class="flex items-center justify-between text-[11px] py-1 border-b border-theme/40 last:border-none">
                 <span class="text-theme-muted flex items-center gap-1.5 truncate">
                   <span class="scale-75 origin-left">${getBrandSVG(c.brand)}</span>
-                  <span class="truncate">${c.name}</span>
+                  <span class="truncate">${escapeHtml(c.name)}</span>
                 </span>
                 <span class="font-mono font-bold text-theme-main">${formatCurrency(p.byCard[c.id])}</span>
               </div>
@@ -3877,7 +3887,7 @@
                     <i class="fa-solid ${isMe ? 'fa-user-check' : 'fa-circle-user'}"></i>
                   </div>
                   <div>
-                    <h4 class="font-extrabold text-xs text-theme-main">${person}</h4>
+                    <h4 class="font-extrabold text-xs text-theme-main">${escapeHtml(person)}</h4>
                     <span class="text-[9.5px] text-theme-muted">${isMe ? 'Titular Principal' : 'Comprador'} • ${perc}%</span>
                   </div>
                 </div>
@@ -3938,7 +3948,7 @@
           <div class="flex items-center justify-between z-10">
             <div class="scale-90 origin-left">${getBankBadge(card.bank)}</div>
             <div class="flex items-center gap-1">
-              <span class="text-[8.5px] uppercase font-mono font-bold px-1.5 py-0.2 rounded-full bg-white/10 text-neutral-200 border border-white/15 backdrop-blur-sm shadow-sm">D${card.dueDay || 5}</span>
+              <span class="text-[8.5px] uppercase font-mono font-bold px-1.5 py-0.2 rounded-full bg-white/10 text-neutral-200 border border-white/15 backdrop-blur-sm shadow-sm">D${escapeHtml(card.dueDay || 5)}</span>
             </div>
           </div>
           <div class="flex items-center justify-between my-0.5 z-10">
@@ -3963,7 +3973,7 @@
             </div>
             <div class="flex flex-col items-end">
               <div class="scale-85 origin-bottom-right drop-shadow-sm">${getBrandSVG(card.brand)}</div>
-              <span class="text-[7.5px] text-neutral-300 uppercase tracking-wider font-bold truncate max-w-[70px]">${card.name}</span>
+              <span class="text-[7.5px] text-neutral-300 uppercase tracking-wider font-bold truncate max-w-[70px]">${escapeHtml(card.name)}</span>
             </div>
           </div>
         `;
@@ -4006,7 +4016,7 @@
             data.push(c.total);
             if (c.total > maiorComp) {
               maiorComp = c.total;
-              cardMaiorNome = `${c.name} (${formatCurrency(c.total)} - ${perc}%)`;
+              cardMaiorNome = `${escapeHtml(c.name)} (${formatCurrency(c.total)} - ${perc}%)`;
             }
           }
         });
@@ -4265,7 +4275,7 @@
         const amount = kind === "close" ? `Parcial: ${formatCurrency(ev.st.pending)}` : `${ev.st.dClose >= 0 ? "Parcial" : "A pagar"}: ${formatCurrency(ev.st.pending)}`;
         return `<button type="button" onclick="openInvoiceFromAgenda('${ev.card.id}','${ev.ym}')" class="text-left p-3 bg-theme-subcard rounded-xl border ${t.border} hover:border-blue-500/60 transition cursor-pointer w-full">
           <p class="text-[10px] uppercase font-bold text-theme-muted tracking-wider flex items-center gap-1.5"><i class="fa-solid ${icon} ${t.text}"></i>${title}</p>
-          <p class="text-xs font-extrabold text-theme-main mt-1.5 truncate">${ev.card.name}</p>
+          <p class="text-xs font-extrabold text-theme-main mt-1.5 truncate">${escapeHtml(ev.card.name)}</p>
           <p class="text-[11px] font-semibold ${t.text}">${sub}</p>
           <p class="text-[10.5px] font-mono text-theme-muted mt-0.5">${amount}</p></button>`;
       };
@@ -4285,7 +4295,7 @@
           : `Fatura ${formatMonthLabel(ev.ym)} · ${ev.st.dClose >= 0 ? "ainda aberta (parcial)" : "fechada"}`;
         return `<button type="button" onclick="openInvoiceFromAgenda('${ev.card.id}','${ev.ym}')" class="w-full text-left p-2.5 rounded-xl bg-theme-subcard border ${t.border} flex items-center gap-3 hover:border-blue-500/60 transition cursor-pointer">
           <div class="w-10 flex-shrink-0 text-center"><div class="text-[9px] uppercase font-bold text-theme-muted">${MONTH_ABBR[ev.date.getMonth()]}</div><div class="text-base font-black font-mono leading-none text-theme-main">${String(ev.date.getDate()).padStart(2, "0")}</div></div>
-          <div class="min-w-0 flex-1"><div class="text-xs font-bold text-theme-main truncate"><i class="fa-solid ${isClose ? "fa-lock" : "fa-calendar-day"} ${t.text} mr-1.5"></i>${title}</div><div class="text-[10.5px] text-theme-muted truncate">${ev.card.name} · ${note}</div></div>
+          <div class="min-w-0 flex-1"><div class="text-xs font-bold text-theme-main truncate"><i class="fa-solid ${isClose ? "fa-lock" : "fa-calendar-day"} ${t.text} mr-1.5"></i>${title}</div><div class="text-[10.5px] text-theme-muted truncate">${escapeHtml(ev.card.name)} · ${note}</div></div>
           <div class="text-right flex-shrink-0"><div class="text-xs font-black font-mono text-theme-main">${formatCurrency(ev.st.pending)}</div><div class="text-[10px] font-semibold ${t.text}">${relDays(ev.days)}</div></div>
         </button>`;
       }).join("");
@@ -4792,7 +4802,7 @@
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5 text-xs font-bold ${isSelected ? 'text-amber-400 font-extrabold' : 'text-amber-500'}">
                   <i class="fa-solid fa-circle-user text-sm"></i>
-                  <span class="truncate">${person}</span>
+                  <span class="truncate">${escapeHtml(person)}</span>
                 </div>
                 ${isSelected ? '<span class="text-[9px] bg-amber-500 text-black font-extrabold px-1 py-0.2 rounded">Filtrado</span>' : ''}
               </div>
@@ -4808,7 +4818,7 @@
                 </div>
               </div>
             </div>
-            <button type="button" onclick="event.stopPropagation(); openReimbursementModalForPerson('${jsq(person)}')" class="${isOwner ? 'hidden ' : ''}mt-2.5 w-full py-1.5 px-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-400 font-bold rounded-xl text-[10px] flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm" title="Registrar valor recebido de ${person}">
+            <button type="button" onclick="event.stopPropagation(); openReimbursementModalForPerson('${jsq(person)}')" class="${isOwner ? 'hidden ' : ''}mt-2.5 w-full py-1.5 px-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-400 font-bold rounded-xl text-[10px] flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm" title="Registrar valor recebido de ${escapeHtml(person)}">
               <i class="fa-solid fa-hand-holding-dollar text-[10px]"></i>
               <span>Registrar Reembolso</span>
             </button>
@@ -5028,32 +5038,32 @@
         const tr = document.createElement("tr");
         tr.className = "hover:bg-theme-subcard/70 transition-colors";
         tr.innerHTML = `
-          <td class="px-1.5 py-2.5 text-theme-muted font-mono font-medium text-[11px] whitespace-nowrap" title="${tx.date || ''}">${fmtShortDate(tx.date)}</td>
+          <td class="px-1.5 py-2.5 text-theme-muted font-mono font-medium text-[11px] whitespace-nowrap" title="${escapeHtml(tx.date || '')}">${escapeHtml(fmtShortDate(tx.date))}</td>
           <td class="px-2 py-2.5">
-            <span class="font-bold text-theme-main truncate block" title="${tx.description}">${tx.description}</span>${dupBadgeSmall(tx, dupAll)}
+            <span class="font-bold text-theme-main truncate block" title="${escapeHtml(tx.description)}">${escapeHtml(tx.description)}</span>${dupBadgeSmall(tx, dupAll)}
           </td>
           <td class="px-2 py-2.5">
-            ${tx.notes ? `<div class="text-[11px] text-amber-400 font-medium flex items-center gap-1 min-w-0" title="${tx.notes}"><i class="fa-solid fa-note-sticky text-[10px] text-amber-500 flex-shrink-0"></i><span class="truncate">${tx.notes}</span></div>` : '<span class="text-theme-muted opacity-40">-</span>'}
+            ${tx.notes ? `<div class="text-[11px] text-amber-400 font-medium flex items-center gap-1 min-w-0" title="${escapeHtml(tx.notes)}"><i class="fa-solid fa-note-sticky text-[10px] text-amber-500 flex-shrink-0"></i><span class="truncate">${escapeHtml(tx.notes)}</span></div>` : '<span class="text-theme-muted opacity-40">-</span>'}
           </td>
           <td class="px-2 py-2.5 text-amber-500 font-bold tracking-tight">
-            <span class="cursor-pointer hover:underline truncate block" title="${txPerson(tx)}" onclick="filterByPerson('${jsq(txPerson(tx))}')">${txPerson(tx)}</span>
+            <span class="cursor-pointer hover:underline truncate block" title="${escapeHtml(txPerson(tx))}" onclick="filterByPerson('${jsq(txPerson(tx))}')">${escapeHtml(txPerson(tx))}</span>
           </td>
           <td class="px-2 py-2.5 text-theme-main">
-            <div class="flex items-center gap-1 min-w-0" title="${cardName}">
-              <span class="truncate font-semibold text-[11px]">${cardName}</span>
+            <div class="flex items-center gap-1 min-w-0" title="${escapeHtml(cardName)}">
+              <span class="truncate font-semibold text-[11px]">${escapeHtml(cardName)}</span>
               <span class="flex-shrink-0 text-[9.5px] font-mono text-theme-muted bg-theme-card px-1 rounded border border-theme">${dueBadge(tx)}</span>
             </div>
           </td>
           <td class="px-1 py-2.5 text-center text-theme-muted font-mono font-bold">${tx.installmentIndex || 1}/${tx.totalInstallments || 1}</td>
-          <td class="px-1 py-2.5 text-center font-mono" title="${tx.invoiceMonth || ''}">${fmtShortMonth(tx.invoiceMonth)}</td>
+          <td class="px-1 py-2.5 text-center font-mono" title="${escapeHtml(tx.invoiceMonth || '')}">${escapeHtml(fmtShortMonth(tx.invoiceMonth))}</td>
           <td class="px-1.5 py-2.5 text-right font-black text-theme-main font-mono text-[11.5px] whitespace-nowrap">${formatCurrency(tx.amount)}</td>
           <td class="px-1 py-2.5 text-center">
             ${txStatusChip(tx)}
           </td>
           <td class="px-1 py-2.5">
             <div class="flex items-center justify-center">
-              <button onclick="editTransaction('${tx.id}')" class="text-blue-500 hover:text-blue-400 p-1 rounded-lg hover:bg-blue-500/10 transition cursor-pointer" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
-              <button onclick="deleteTransaction('${tx.id}')" class="text-rose-500 hover:text-rose-400 p-1 rounded-lg hover:bg-rose-500/10 transition cursor-pointer" title="Deletar"><i class="fa-solid fa-trash-can"></i></button>
+              <button onclick="editTransaction('${escapeHtml(jsq(tx.id))}')" class="text-blue-500 hover:text-blue-400 p-1 rounded-lg hover:bg-blue-500/10 transition cursor-pointer" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
+              <button onclick="deleteTransaction('${escapeHtml(jsq(tx.id))}')" class="text-rose-500 hover:text-rose-400 p-1 rounded-lg hover:bg-rose-500/10 transition cursor-pointer" title="Deletar"><i class="fa-solid fa-trash-can"></i></button>
             </div>
           </td>
         `;
@@ -5076,15 +5086,15 @@
               <div class="flex items-start justify-between gap-2">
                 <div class="flex-1">
                   <div class="flex items-center gap-1.5 flex-wrap mb-1">
-                    <span class="text-[10px] font-mono text-theme-muted">${tx.date || '-'}</span>
+                    <span class="text-[10px] font-mono text-theme-muted">${escapeHtml(tx.date || '-')}</span>
                     <span class="text-[10px] bg-theme-card px-2 py-0.5 rounded-md border border-theme font-bold text-theme-main flex items-center gap-1">
                       <span class="scale-75 origin-left">${cardObj ? getBrandSVG(cardObj.brand) : ''}</span>
-                      <span>${cardName}</span>
+                      <span>${escapeHtml(cardName)}</span>
                       <span class="text-theme-muted font-mono font-normal">${dueBadge(tx)}</span>
                     </span>
-                    <span class="text-[10px] font-mono text-theme-muted">Fatura: ${tx.invoiceMonth || '-'}</span>
+                    <span class="text-[10px] font-mono text-theme-muted">Fatura: ${escapeHtml(tx.invoiceMonth || '-')}</span>
                   </div>
-                  <h4 class="font-extrabold text-sm text-theme-main leading-tight">${tx.description}</h4>
+                  <h4 class="font-extrabold text-sm text-theme-main leading-tight">${escapeHtml(tx.description)}</h4>
                 </div>
                 <div class="text-right flex-shrink-0">
                   <div class="text-base font-black font-mono text-theme-main">${formatCurrency(tx.amount)}</div>
@@ -5095,7 +5105,7 @@
               ${tx.notes ? `
                 <div class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-xs text-amber-400">
                   <i class="fa-solid fa-note-sticky text-amber-500 flex-shrink-0"></i>
-                  <span class="font-medium truncate">${tx.notes}</span>
+                  <span class="font-medium truncate">${escapeHtml(tx.notes)}</span>
                 </div>
               ` : ''}
 
@@ -5103,15 +5113,15 @@
                 <div class="flex items-center gap-1.5">
                   <span class="text-[11px] text-amber-500 font-bold flex items-center gap-1 cursor-pointer hover:underline" onclick="filterByPerson('${jsq(txPerson(tx))}')">
                     <i class="fa-solid fa-circle-user text-xs"></i>
-                    <span>${txPerson(tx)}</span>
+                    <span>${escapeHtml(txPerson(tx))}</span>
                   </span>
                 </div>
                 <div class="flex items-center gap-2">
                   ${txStatusChip(tx, true)}
-                  <button onclick="editTransaction('${tx.id}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-blue-500/20 text-blue-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Editar">
+                  <button onclick="editTransaction('${escapeHtml(jsq(tx.id))}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-blue-500/20 text-blue-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Editar">
                     <i class="fa-solid fa-pen-to-square text-xs"></i>
                   </button>
-                  <button onclick="deleteTransaction('${tx.id}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Deletar">
+                  <button onclick="deleteTransaction('${escapeHtml(jsq(tx.id))}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Deletar">
                     <i class="fa-solid fa-trash-can text-xs"></i>
                   </button>
                 </div>
@@ -5262,7 +5272,7 @@
             activeCardId = cardId;
             activeCardName = cardName;
             activeCardTotal = 0;
-            body.push([`CARTÃO: ${cardName} — ${dueKeyHeading(dueDay)}`, '', '', '', '', '', '', '', '']);
+            body.push([`CARTÃO: ${escapeHtml(cardName)} — ${dueKeyHeading(dueDay)}`, '', '', '', '', '', '', '', '']);
           }
           activeCardTotal += Number(t.amount) || 0;
           body.push([
@@ -5636,16 +5646,16 @@
           ? `<span class="font-mono font-bold text-blue-400">${monthTxt}</span> <span class="text-[10px] bg-theme-subcard border border-theme px-1.5 py-0.5 rounded-md font-bold text-theme-main">${dueKeyShort(r.dueKey)}</span>`
           : `<span class="text-theme-muted text-[10.5px]" title="Baixa antiga, feita por parcela">${monthTxt} · ${clearedCount} parcela${clearedCount !== 1 ? 's' : ''} (antigo)</span>`;
         tr.innerHTML = `
-          <td class="p-3 text-theme-muted font-mono">${r.date || '-'}</td>
-          <td class="p-3 font-bold text-amber-500">${r.buyerName || '-'}</td>
+          <td class="p-3 text-theme-muted font-mono">${escapeHtml(r.date || '-')}</td>
+          <td class="p-3 font-bold text-amber-500">${escapeHtml(r.buyerName || '-')}</td>
           <td class="p-3 text-right font-black font-mono text-emerald-400 text-sm">${formatCurrency(r.amount)}</td>
           <td class="p-3 text-center">
             <span class="inline-flex items-center gap-1 bg-theme-subcard border border-theme px-2 py-0.5 rounded-md font-bold text-[10px] text-theme-main">
-              <i class="fa-solid fa-money-bill-transfer text-emerald-400 text-[9px]"></i> ${r.paymentMethod || 'PIX'}
+              <i class="fa-solid fa-money-bill-transfer text-emerald-400 text-[9px]"></i> ${escapeHtml(r.paymentMethod || 'PIX')}
             </span>
           </td>
-          <td class="p-3 text-theme-muted max-w-[200px] truncate" title="${String(r.notes || '').replace(/"/g, '&quot;')}">
-            ${r.notes ? `<span class="text-theme-main font-medium">${r.notes}</span>` : '<span class="opacity-40">-</span>'}
+          <td class="p-3 text-theme-muted max-w-[200px] truncate" title="${escapeHtml(r.notes || '')}">
+            ${r.notes ? `<span class="text-theme-main font-medium">${escapeHtml(r.notes)}</span>` : '<span class="opacity-40">-</span>'}
           </td>
           <td class="p-3 text-center whitespace-nowrap">${periodo}</td>
           <td class="p-3 text-center whitespace-nowrap">
@@ -6459,9 +6469,17 @@
       buildBuyerAlloc();
 
       document.getElementById("cardDetailIcon").innerHTML = getBrandSVG(card.brand);
-      document.getElementById("cardDetailTitle").innerHTML = `<span>${card.name}</span><span class="ml-2">${getBankBadge(card.bank)}</span>`;
+      const detailTitle = document.getElementById("cardDetailTitle");
+      detailTitle.replaceChildren();
+      const detailName = document.createElement('span'); detailName.textContent = card.name || '';
+      const detailBank = document.createElement('span'); detailBank.className = 'ml-2'; detailBank.innerHTML = getBankBadge(card.bank);
+      detailTitle.append(detailName, detailBank);
       const stDet = getInvoiceStatus(card, currentInvoiceMonth);
-      document.getElementById("cardDetailSubtitle").innerHTML = `Titular: ${card.holder} | Fechamento Dia ${card.closingDay || 29} | Vencimento Dia ${card.dueDay || 5} <span class="ml-1.5 inline-block align-middle">${statusPill(stDet)}</span> <span class="text-[10.5px] font-mono text-theme-muted">(fecha ${fmtDM(stDet.closing)} · vence ${fmtDM(stDet.due)})</span>`;
+      const detailSubtitle = document.getElementById("cardDetailSubtitle");
+      detailSubtitle.replaceChildren(document.createTextNode(`Titular: ${card.holder || ''} | Fechamento Dia ${card.closingDay || 29} | Vencimento Dia ${escapeHtml(card.dueDay || 5)} `));
+      const detailStatus = document.createElement('span'); detailStatus.className = 'ml-1.5 inline-block align-middle'; detailStatus.innerHTML = statusPill(stDet);
+      const detailDates = document.createElement('span'); detailDates.className = 'text-[10.5px] font-mono text-theme-muted'; detailDates.textContent = `(fecha ${fmtDM(stDet.closing)} · vence ${fmtDM(stDet.due)})`;
+      detailSubtitle.append(detailStatus, document.createTextNode(' '), detailDates);
       document.getElementById("cardDetailMonth").textContent = formatMonthLabel(currentInvoiceMonth);
 
       const list = appData.transactions.filter(t => String(t.cardId) === String(card.id) && t.invoiceMonth === currentInvoiceMonth);
@@ -6509,22 +6527,22 @@
         const tr = document.createElement("tr");
         tr.className = "hover:bg-theme-subcard/70 transition-colors";
         tr.innerHTML = `
-          <td class="p-3.5 text-theme-muted font-mono font-medium">${tx.date || '-'}</td>
-          <td class="p-3.5 font-bold text-theme-main">${tx.description}</td>
+          <td class="p-3.5 text-theme-muted font-mono font-medium">${escapeHtml(tx.date || '-')}</td>
+          <td class="p-3.5 font-bold text-theme-main">${escapeHtml(tx.description)}</td>
           <!-- COLUNA DE OBSERVAÇÕES -->
           <td class="p-3.5 max-w-[200px]">
-            ${tx.notes ? `<div class="text-[11px] text-amber-400 font-medium truncate flex items-center gap-1.5" title="${tx.notes}"><i class="fa-solid fa-note-sticky text-[10px] text-amber-500"></i><span class="truncate">${tx.notes}</span></div>` : '<span class="text-theme-muted opacity-40">-</span>'}
+            ${tx.notes ? `<div class="text-[11px] text-amber-400 font-medium truncate flex items-center gap-1.5" title="${escapeHtml(tx.notes)}"><i class="fa-solid fa-note-sticky text-[10px] text-amber-500"></i><span class="truncate">${escapeHtml(tx.notes)}</span></div>` : '<span class="text-theme-muted opacity-40">-</span>'}
           </td>
-          <td class="p-3.5 font-bold ${tx.isThirdParty ? 'text-amber-500' : 'text-theme-muted'}">${tx.isThirdParty ? tx.thirdPartyName : (appData.userName || 'Titular')}</td>
+          <td class="p-3.5 font-bold ${tx.isThirdParty ? 'text-amber-500' : 'text-theme-muted'}">${escapeHtml(tx.isThirdParty ? tx.thirdPartyName : (appData.userName || 'Titular'))}</td>
           <td class="p-3.5 text-center text-theme-muted font-mono font-bold">${tx.installmentIndex || 1} / ${tx.totalInstallments || 1}</td>
           <td class="p-3.5 text-right font-black text-theme-main font-mono text-sm">${formatCurrency(tx.amount)}</td>
-          <td class="p-3.5 text-center font-mono text-theme-muted">${tx.invoiceMonth}</td>
+          <td class="p-3.5 text-center font-mono text-theme-muted">${escapeHtml(tx.invoiceMonth)}</td>
           <td class="p-3.5 text-center">
             ${cardTxChip(tx)}
           </td>
           <td class="p-3.5 text-center whitespace-nowrap">
-            <button onclick="editTransaction('${tx.id}')" class="text-blue-500 hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-500/10 transition cursor-pointer" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button onclick="deleteTransaction('${tx.id}')" class="text-rose-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition ml-1 cursor-pointer" title="Deletar"><i class="fa-solid fa-trash-can"></i></button>
+            <button onclick="editTransaction('${escapeHtml(jsq(tx.id))}')" class="text-blue-500 hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-500/10 transition cursor-pointer" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
+            <button onclick="deleteTransaction('${escapeHtml(jsq(tx.id))}')" class="text-rose-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition ml-1 cursor-pointer" title="Deletar"><i class="fa-solid fa-trash-can"></i></button>
           </td>
         `;
         if (dupG) { try { dupApplyRowStyle(tr, dupG); } catch (_) {} }
@@ -6556,8 +6574,8 @@
             cardItem.innerHTML = `
               <div class="flex items-start justify-between gap-2">
                 <div class="flex-1">
-                  <div class="text-[10px] font-mono text-theme-muted mb-1">${tx.date || '-'} • Fatura ${tx.invoiceMonth || '-'}</div>
-                  <h4 class="font-extrabold text-sm text-theme-main leading-tight">${tx.description}</h4>
+                  <div class="text-[10px] font-mono text-theme-muted mb-1">${escapeHtml(tx.date || '-')} • Fatura ${escapeHtml(tx.invoiceMonth || '-')}</div>
+                  <h4 class="font-extrabold text-sm text-theme-main leading-tight">${escapeHtml(tx.description)}</h4>
                 </div>
                 <div class="text-right flex-shrink-0">
                   <div class="text-base font-black font-mono text-theme-main">${formatCurrency(tx.amount)}</div>
@@ -6568,20 +6586,20 @@
               ${tx.notes ? `
                 <div class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-xs text-amber-400">
                   <i class="fa-solid fa-note-sticky text-amber-500 flex-shrink-0"></i>
-                  <span class="font-medium truncate">${tx.notes}</span>
+                  <span class="font-medium truncate">${escapeHtml(tx.notes)}</span>
                 </div>
               ` : ''}
 
               <div class="flex items-center justify-between pt-2 border-t border-theme/60 text-xs">
                 <span class="font-bold text-[11px] ${tx.isThirdParty ? 'text-amber-500' : 'text-theme-muted'}">
-                  ${tx.isThirdParty ? tx.thirdPartyName : (appData.userName || 'Titular')}
+                  ${escapeHtml(tx.isThirdParty ? tx.thirdPartyName : (appData.userName || 'Titular'))}
                 </span>
                 <div class="flex items-center gap-2">
                   ${cardTxChip(tx, true)}
-                  <button onclick="editTransaction('${tx.id}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-blue-500/20 text-blue-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Editar">
+                  <button onclick="editTransaction('${escapeHtml(jsq(tx.id))}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-blue-500/20 text-blue-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Editar">
                     <i class="fa-solid fa-pen-to-square text-xs"></i>
                   </button>
-                  <button onclick="deleteTransaction('${tx.id}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Deletar">
+                  <button onclick="deleteTransaction('${escapeHtml(jsq(tx.id))}')" class="w-8 h-8 rounded-lg bg-theme-card hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition border border-theme cursor-pointer" title="Deletar">
                     <i class="fa-solid fa-trash-can text-xs"></i>
                   </button>
                 </div>
@@ -6611,11 +6629,11 @@
       }
       const isPaid = status === 'paid';
       const total = invoiceTransactions.reduce((a, t) => a + (Number(t.amount) || 0), 0);
-      if (!confirm(`${card.name} · fatura ${formatMonthLabel(month)} (${formatCurrency(total)})\n\nMarcar os ${invoiceTransactions.length} lançamentos como ${isPaid ? 'PAGOS' : 'PENDENTES'}?`)) return;
+      if (!confirm(`${escapeHtml(card.name)} · fatura ${formatMonthLabel(month)} (${formatCurrency(total)})\n\nMarcar os ${invoiceTransactions.length} lançamentos como ${isPaid ? 'PAGOS' : 'PENDENTES'}?`)) return;
       invoiceTransactions.forEach(t => { t.isPaidInvoice = isPaid; });
       c27Log(isPaid ? 'invoice_paid' : 'invoice_pending', { card: cardId, month, n: invoiceTransactions.length });
       refreshViews();
-      const okMsg = `${card.name} · ${formatMonthLabel(month)}: fatura marcada como ${isPaid ? 'PAGA' : 'PENDENTE'} e salva.`;
+      const okMsg = `${escapeHtml(card.name)} · ${formatMonthLabel(month)}: fatura marcada como ${isPaid ? 'PAGA' : 'PENDENTE'} e salva.`;
       try { await syncToExternalFile(true, okMsg); } finally { refreshViews(); }
       // Confere o estado final (inclusive após mesclar com o servidor). Se algo divergiu, reaplica e grava de novo.
       const after = pick();
@@ -6649,19 +6667,19 @@
             <div class="flex items-center gap-2.5">
               <span class="scale-90">${getBrandSVG(card.brand)}</span>
               <div>
-                <span class="font-bold text-theme-main block">${card.name}</span>
-                <span class="text-[10px] text-theme-muted">${card.bank || 'Banco'}</span>
+                <span class="font-bold text-theme-main block">${escapeHtml(card.name)}</span>
+                <span class="text-[10px] text-theme-muted">${escapeHtml(card.bank || 'Banco')}</span>
               </div>
             </div>
           </td>
-          <td class="p-3.5 font-bold font-mono text-xs">${card.brand}</td>
-          <td class="p-3.5 text-theme-main font-medium">${card.holder}</td>
+          <td class="p-3.5 font-bold font-mono text-xs">${escapeHtml(card.brand)}</td>
+          <td class="p-3.5 text-theme-main font-medium">${escapeHtml(card.holder)}</td>
           <td class="p-3.5 text-center font-mono font-bold text-theme-muted">Dia ${card.closingDay || 29}</td>
-          <td class="p-3.5 text-center font-mono font-bold text-emerald-400">Dia ${card.dueDay || 5}</td>
+          <td class="p-3.5 text-center font-mono font-bold text-emerald-400">Dia ${escapeHtml(card.dueDay || 5)}</td>
           <td class="p-3.5 text-right font-mono font-black text-theme-main">${formatCurrency(card.limit || 0)}</td>
           <td class="p-3.5 text-center whitespace-nowrap">
-            <button onclick="editCardConfig('${card.id}')" class="text-blue-500 hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-500/10 transition cursor-pointer" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button onclick="deleteCardConfig('${card.id}')" class="text-rose-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition ml-1 cursor-pointer" title="Excluir"><i class="fa-solid fa-trash-can"></i></button>
+            <button onclick="editCardConfig('${escapeHtml(jsq(card.id))}')" class="text-blue-500 hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-500/10 transition cursor-pointer" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
+            <button onclick="deleteCardConfig('${escapeHtml(jsq(card.id))}')" class="text-rose-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition ml-1 cursor-pointer" title="Excluir"><i class="fa-solid fa-trash-can"></i></button>
           </td>
         `;
         tbodyCards.appendChild(tr);
@@ -6674,13 +6692,13 @@
         const tr = document.createElement("tr");
         tr.className = "hover:bg-theme-subcard/70 transition-colors";
         tr.innerHTML = `
-          <td class="p-3.5 font-bold text-theme-main">${acc.name}</td>
-          <td class="p-3.5 font-mono text-xs text-theme-muted">${acc.email || '-'}</td>
+          <td class="p-3.5 font-bold text-theme-main">${escapeHtml(acc.name)}</td>
+          <td class="p-3.5 font-mono text-xs text-theme-muted">${escapeHtml(acc.email || '-')}</td>
           <td class="p-3.5 text-center font-mono font-bold text-blue-400">${count} cartões</td>
           <td class="p-3.5 text-center">${acc.isPrimary ? '<span class="inline-flex items-center gap-1 text-emerald-400 text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full"><i class="fa-solid fa-star text-[9px]"></i> Principal</span>' : '<span class="text-theme-muted text-[10px] font-medium">Secundário</span>'}</td>
           <td class="p-3.5 text-center whitespace-nowrap">
-            <button onclick="editAccountConfig('${acc.id}')" class="text-blue-500 hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-500/10 transition cursor-pointer"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button onclick="deleteAccountConfig('${acc.id}')" class="text-rose-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition ml-1 cursor-pointer"><i class="fa-solid fa-trash-can"></i></button>
+            <button onclick="editAccountConfig('${escapeHtml(jsq(acc.id))}')" class="text-blue-500 hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-500/10 transition cursor-pointer"><i class="fa-solid fa-pen-to-square"></i></button>
+            <button onclick="deleteAccountConfig('${escapeHtml(jsq(acc.id))}')" class="text-rose-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition ml-1 cursor-pointer"><i class="fa-solid fa-trash-can"></i></button>
           </td>
         `;
         tbodyAcc.appendChild(tr);
@@ -6726,7 +6744,7 @@
         showToast("Este cartão tem lançamentos. Remova ou altere os lançamentos antes.", "error");
         return;
       }
-      if (confirm(`Deseja excluir o cartão "${card.name}"?`)) {
+      if (confirm(`Deseja excluir o cartão "${escapeHtml(card.name)}"?`)) {
         appData.cards = appData.cards.filter(c => c.id !== cardId);
         c27Log('card_delete', { id: cardId });
         await syncToExternalFile(true);
@@ -6863,7 +6881,7 @@
       appData.cards.forEach(c => {
         const opt = document.createElement("option");
         opt.value = c.id;
-        opt.textContent = `${c.name} (${c.brand} - Venc: D${c.dueDay || 5})`;
+        opt.textContent = `${escapeHtml(c.name)} (${c.brand} - Venc: D${c.dueDay || 5})`;
         select.appendChild(opt);
       });
 
@@ -6969,7 +6987,7 @@
     async function deleteTransaction(id) {
       const tx = appData.transactions.find(t => t.id === id);
       if (!tx) return;
-      if (confirm(`Deseja realmente deletar "${tx.description}"?`)) {
+      if (confirm(`Deseja realmente deletar "${escapeHtml(tx.description)}"?`)) {
         appData.transactions = appData.transactions.filter(t => t.id !== id);
         c27Log('tx_delete', { id });
         refreshViews();
@@ -7240,6 +7258,7 @@
           const pw = $("setupPass").value;
           if (username.length < 3) { msg.textContent = "O usuário deve ter pelo menos 3 caracteres."; return; }
           if (pw.length < 8) { msg.textContent = "Use uma senha com pelo menos 8 caracteres."; return; }
+          if (pw !== pw.trim()) { msg.textContent = "A senha não pode começar ou terminar com espaços."; return; }
           if (pw === "ronando27" || pw === "ronando" || pw === "123456" || pw === "adm" || pw === "admin") {
             msg.textContent = "Escolha uma senha diferente das senhas padrão conhecidas."; return;
           }
@@ -7345,11 +7364,25 @@
           if (u) {
             const h = await hashPw(pw, u.salt);
             let ok = h.hash === u.hash;
+            let serverAuthResult = null;
             if (!ok && legacyB64(pw) && u.hash === legacyB64(pw)) {
               // conta criada por um navegador sem WebCrypto (hash fraco antigo): migra para PBKDF2
               const all = loadUsers() || [];
               const rec = all.find(x => x.username === u.username);
               if (rec) { Object.assign(rec, await hashPw(pw)); saveUsers(all); Object.assign(u, rec); ok = true; }
+            }
+            if (!ok) {
+              // A senha local pode estar desatualizada em outro dispositivo após a troca.
+              // O servidor é a autoridade compartilhada; só atualizamos o cache local após prova aceita.
+              serverAuthResult = await c27ServerAuth(pw);
+              if (serverAuthResult === 'ok') {
+                const upgraded = await hashPw(pw);
+                Object.assign(u, upgraded, { chk: 1 });
+                const allUsers = loadUsers() || [];
+                const pos = allUsers.findIndex(x => x.username === u.username);
+                if (pos >= 0) { allUsers[pos] = u; saveUsers(allUsers); }
+                ok = true;
+              }
             }
             if (ok) {
               me = u;
@@ -7357,10 +7390,11 @@
               window.__c27UserName = u.name || u.username;
               sessionStorage.setItem(SESSION_KEY, JSON.stringify({ u: u.username, su: window.C27_SERVER_USER || null, exp: Date.now() + 8 * 3600e3 }));
               c27Log('login_ok', { u: String(u.username).slice(0, 30) });
-              const sa = await c27ServerAuth(pw);            // login único: a mesma senha libera o servidor
+              const sa = serverAuthResult || await c27ServerAuth(pw); // login único: a mesma senha libera o servidor
               enter();
               if (sa === 'refused') setTimeout(() => window.c27ServerRefused(true), 900);
               else if (sa === 'error') setTimeout(() => showToast('Servidor sem credencial configurada na Vercel (APP_PROOF_HASH ou APP_PASSWORD).', 'warning'), 900);
+              else if (sa === 'rate_limited') setTimeout(() => showToast('Muitas tentativas no servidor. Aguarde antes de sincronizar novamente.', 'warning'), 900);
               return;
             }
           } else if (!users.length) {
@@ -7392,7 +7426,7 @@
             <h2 class="text-lg font-extrabold"><i class="fa-solid fa-key text-amber-500"></i> Alterar senha</h2>
             <label class="block text-sm font-semibold">Senha atual
               <input id="pwCur" type="password" class="mt-1 w-full input-theme border rounded-xl p-2.5"></label>
-            <label class="block text-sm font-semibold">Nova senha (mínimo 6 caracteres)
+            <label class="block text-sm font-semibold">Nova senha (mínimo 8 caracteres)
               <input id="pwNew" type="password" class="mt-1 w-full input-theme border rounded-xl p-2.5"></label>
             <label class="block text-sm font-semibold">Confirmar nova senha
               <input id="pwNew2" type="password" class="mt-1 w-full input-theme border rounded-xl p-2.5"></label>
@@ -7412,24 +7446,50 @@
           const h = await hashPw($("pwCur").value, u.salt);
           if (h.hash !== u.hash) { $("pwMsg").textContent = "Senha atual incorreta."; return; }
           const n1 = $("pwNew").value, n2 = $("pwNew2").value;
-          if (n1.length < 6) { $("pwMsg").textContent = "Mínimo 6 caracteres."; return; }
+          if (n1 !== n1.trim()) { $("pwMsg").textContent = "A senha não pode começar ou terminar com espaços."; return; }
+          if (n1.length < 8) { $("pwMsg").textContent = "Mínimo 8 caracteres."; return; }
+          if (DEFAULT_PWS.includes(n1)) { $("pwMsg").textContent = "Escolha uma senha diferente das senhas padrão conhecidas."; return; }
           if (n1 !== n2) { $("pwMsg").textContent = "Senhas não coincidem."; return; }
-          Object.assign(u, await hashPw(n1));
-          saveUsers(list);
-          m.remove();
-          // nova senha => nova chave; regrava cache e servidor já com ela
-          C27.pw = n1;
-          if (C27_HAS_SUBTLE) await c27DeriveKey(n1, u8ToB64(c27RandomBytes(16)));
-          await syncToExternalFile(false);
-          showToast("Senha alterada! Em outros dispositivos, use a nova senha ao abrir o banco.", "success");
-          c27ShowServerCredential(n1);
+          const previousUser = { ...u };
+          const previousKeyState = { key: C27.key, ksalt: C27.ksalt, pw: C27.pw, stored: sessionStorage.getItem('controler27_dk') };
+          try {
+            Object.assign(u, await hashPw(n1));
+            saveUsers(list);
+            C27.pw = n1;
+            await c27DeriveKey(n1, u8ToB64(c27RandomBytes(16)));
+            let saved = await syncToExternalFile(false);
+            // Se a resposta da gravação se perdeu, confirma no servidor antes de desfazer a troca.
+            if (!saved) {
+              const remote = await fetchRemoteEnvelope();
+              if (remote && remote.enc && await c27PwOpensEnvelope(remote, n1)) saved = true;
+            }
+            if (!saved) {
+              Object.assign(u, previousUser);
+              saveUsers(list);
+              C27.key = previousKeyState.key; C27.ksalt = previousKeyState.ksalt; C27.pw = previousKeyState.pw;
+              if (previousKeyState.stored) sessionStorage.setItem('controler27_dk', previousKeyState.stored);
+              else sessionStorage.removeItem('controler27_dk');
+              try { await writeCache(true); } catch (_) {}
+              m.remove();
+              showToast("Senha não alterada: não foi possível confirmar a gravação criptografada no servidor. Mantenha a senha anterior e tente novamente.", "error");
+              return;
+            }
+            m.remove();
+            showToast("Senha alterada e banco sincronizado. Atualize APP_PROOF_HASH na Vercel e faça redeploy antes de entrar nos outros dispositivos.", "success");
+            c27ShowServerCredential(n1);
+          } catch (err) {
+            Object.assign(u, previousUser); saveUsers(list);
+            C27.key = previousKeyState.key; C27.ksalt = previousKeyState.ksalt; C27.pw = previousKeyState.pw;
+            if (previousKeyState.stored) sessionStorage.setItem('controler27_dk', previousKeyState.stored);
+            else sessionStorage.removeItem('controler27_dk');
+            try { await writeCache(true); } catch (_) {}
+            m.remove();
+            showToast("Não foi possível concluir a troca. A senha anterior foi preservada neste navegador.", "error");
+          }
         };
       };
 
       async function startApp() {
-        if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-          navigator.serviceWorker.register('sw.js').catch(() => {});
-        }
         initTheme();
         detectDevice(true);
         try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (_) {}

@@ -2,6 +2,22 @@
 // POST /api/db  -> grava o banco no GitHub (com as mesmas travas do servidor antigo)
 import { env, authConfigured, noStore, json, readJson, readSession, ghRead, ghWrite } from './_lib.js';
 
+function isEncryptedEnvelope(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (value.enc !== 'aes-gcm-256' || value.v !== 2) return false;
+  const allowed = new Set(['v', 'enc', 'ksalt', 'iv', 'data', 'updatedAt']);
+  if (Object.keys(value).some(key => !allowed.has(key))) return false;
+  if (typeof value.ksalt !== 'string' || typeof value.iv !== 'string' || typeof value.data !== 'string') return false;
+  if (![value.ksalt, value.iv, value.data].every(x => /^[A-Za-z0-9+/]+={0,2}$/.test(x))) return false;
+  try {
+    const salt = Buffer.from(value.ksalt, 'base64');
+    const iv = Buffer.from(value.iv, 'base64');
+    const data = Buffer.from(value.data, 'base64');
+    return salt.length >= 16 && salt.length <= 64 && iv.length === 12 && data.length >= 16 && data.length <= 4 * 1024 * 1024 &&
+      salt.toString('base64') === value.ksalt && iv.toString('base64') === value.iv && data.toString('base64') === value.data;
+  } catch (_) { return false; }
+}
+
 export default async function handler(req, res) {
   noStore(res);
   const cfg = env();
@@ -21,8 +37,15 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const cur = await ghRead(cfg);
       if (cur.notFound) return json(res, 404, { error: 'O banco ainda não existe.' });
-      try { JSON.parse(cur.text); } catch (_) {
+      let stored;
+      try { stored = JSON.parse(cur.text); } catch (_) {
         return json(res, 502, { error: 'O arquivo do banco no GitHub está ilegível.' });
+      }
+      if (!isEncryptedEnvelope(stored)) {
+        if (process.env.ALLOW_LEGACY_PLAINTEXT_DB !== 'true') {
+          return json(res, 422, { error: 'O banco remoto não está criptografado. A leitura foi bloqueada para proteger os dados. Faça a migração controlada do banco antes de liberar o acesso.' });
+        }
+        res.setHeader('X-C27-Legacy-Plaintext', '1');
       }
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -31,14 +54,18 @@ export default async function handler(req, res) {
 
     // ---------------------------------------------------------------- GRAVAR
     if (req.method === 'POST' || req.method === 'PUT') {
-      const incoming = await readJson(req);
+      let incoming;
+      try { incoming = await readJson(req); } catch (err) {
+        if (err?.message === 'BODY_TOO_LARGE') return json(res, 413, { error: 'Banco excede o limite seguro de 4 MB por gravação.' });
+        throw err;
+      }
       if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
         return json(res, 400, { error: 'Payload JSON inválido.' });
       }
-      const incomingEncrypted = !!(incoming.enc && incoming.iv && incoming.data);
+      const incomingEncrypted = isEncryptedEnvelope(incoming);
       const incomingPlain = Array.isArray(incoming.cards) || Array.isArray(incoming.transactions);
-      if (!incomingEncrypted && !incomingPlain) {
-        return json(res, 400, { error: 'Formato de banco não reconhecido.' });
+      if (!incomingEncrypted && !(incomingPlain && process.env.ALLOW_LEGACY_PLAINTEXT_DB === 'true')) {
+        return json(res, 422, { error: 'Gravação bloqueada: o banco precisa estar criptografado com AES-GCM-256.' });
       }
 
       const text = JSON.stringify(incoming, null, 2);
@@ -54,10 +81,13 @@ export default async function handler(req, res) {
           try { curObj = JSON.parse(cur.text); } catch (_) { /* arquivo atual estragado: deixa sobrescrever */ }
           if (curObj && typeof curObj === 'object') {
             // 1) nunca trocar um banco criptografado por texto puro
-            if (curObj.enc && !incomingEncrypted) {
+            if (isEncryptedEnvelope(curObj) && !incomingEncrypted) {
               return json(res, 422, { error: 'Recusado: o banco é criptografado e a gravação veio sem criptografia.' });
             }
             // 2) versão mais antiga que a do servidor (outro dispositivo gravou antes)
+            if (!isEncryptedEnvelope(curObj) && process.env.ALLOW_LEGACY_PLAINTEXT_DB !== 'true') {
+              return json(res, 422, { error: 'O banco atual está em formato legado sem criptografia. Migração controlada necessária.' });
+            }
             const curTs = Number(curObj.updatedAt) || 0;
             const newTs = Number(incoming.updatedAt) || 0;
             if (curTs && newTs < curTs) {
@@ -80,6 +110,7 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET, POST, PUT');
     return json(res, 405, { error: `Método ${req.method} não permitido.` });
   } catch (err) {
+    if (err?.message === 'BODY_TOO_LARGE') return json(res, 413, { error: 'Banco excede o limite seguro de 4 MB por gravação.' });
     console.error('[db]', err && err.message);
     return json(res, 502, { error: 'Falha ao acessar o GitHub.', message: String(err && err.message || '').slice(0, 200) });
   }

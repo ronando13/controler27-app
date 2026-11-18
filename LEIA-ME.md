@@ -1,104 +1,106 @@
-# Controler27 PRO v2.00b — Vercel + banco no GitHub (login único)
+# Controler27 PRO v2.00b — pacote revisado (Vercel + GitHub)
 
-## Como funciona
+Este pacote mantém a aplicação original e seu formato de banco. As alterações desta revisão concentram-se em segurança, autenticação, validação do banco remoto e testes automatizados.
 
-| Peça | Onde fica |
-|---|---|
-| Aplicativo (`public/index.html` + funções `/api`) | **Repositório do app** → conectado à Vercel |
-| Banco (`controler27_bd.json`) | **Repositório de dados** (privado) → só o arquivo do banco, sem ligação com a Vercel |
-| Acesso | **Um único login: o do aplicativo** (usuário + senha) |
+## Arquitetura
 
-**Como o login único protege o banco**
-1. O app (HTML) é público, como o seu FinControl. Ele não contém senha nem hash nenhum.
-2. Quando você entra, o app valida a senha no navegador e envia ao servidor só uma **prova derivada** dela (PBKDF2, 150 mil iterações). A senha em si nunca sai do navegador.
-3. Se a prova confere, o servidor entrega um cookie (90 dias) que libera `/api/db`. Sem o cookie, ninguém lê nem grava o banco.
-4. O arquivo no GitHub já é gravado **criptografado** (AES-256, com a senha do app como chave).
+- `public/index.html`: interface e lógica do aplicativo.
+- `api/`: autenticação, sessão, banco no GitHub e logs.
+- `ferramentas/gerar-credencial.html`: gera a variável `APP_PROOF_HASH` localmente no navegador.
+- `tests/`: testes automatizados do backend.
+- `vercel.json`: publicação e cabeçalhos HTTP.
 
-> **Importante:** como não há mais um login separado no servidor, a segurança passa a depender da **força da senha**. Use uma frase longa (14+ caracteres). O login não bloqueia por número de tentativas, só tem uma pausa a cada erro.
+O arquivo `controler27_bd.json` permanece no repositório privado do GitHub. Ele deve ser um envelope criptografado AES-GCM-256 gerado pelo aplicativo.
 
----
+## Configuração inicial na Vercel
 
-## Passo a passo
+Configure as variáveis de ambiente:
 
-### 1. Repositório de dados
-1. No GitHub, crie um repositório **privado** (ex.: `controler27-dados`) marcando **Add a README** (precisa ter ao menos um commit).
-2. Envie para a raiz dele o seu banco atual com o nome **`controler27_bd.json`** (o arquivo que o servidor antigo mantém na pasta dele).
-   - Sem esse arquivo, o app começa vazio. Se não achar o arquivo, use *Importar* com um backup completo (JSON) depois de entrar.
+| Variável | Obrigatória | Valor |
+|---|---:|---|
+| `APP_PROOF_HASH` | Sim* | Hash gerado em `ferramentas/gerar-credencial.html` com a senha atual do banco |
+| `GITHUB_TOKEN` | Sim | Fine-grained token com Contents: Read and write apenas no repositório privado do banco |
+| `GITHUB_REPO` | Sim | `usuario/repositorio-privado` |
+| `SESSION_SECRET` | Recomendável | Segredo aleatório forte, independente da senha do aplicativo |
+| `GITHUB_BRANCH` | Não | `main` (padrão) |
+| `DB_FILE_PATH` | Não | `controler27_bd.json` (padrão) |
+| `ALLOW_LEGACY_PLAINTEXT_DB` | Não | Não configure normalmente. Use apenas durante a migração descrita abaixo |
 
-### 2. Token do GitHub
-1. GitHub → *Settings* → *Developer settings* → *Fine-grained tokens* → *Generate new token*.
-2. *Repository access*: **Only select repositories** → somente o repositório de dados.
-3. *Permissions* → *Contents*: **Read and write**.
-4. Copie o token (aparece uma vez). Ele **expira**: anote a data e renove antes.
+*Em vez de `APP_PROOF_HASH`, o backend ainda aceita `APP_PASSWORD` por compatibilidade, mas essa alternativa guarda a senha diretamente nas variáveis da Vercel e é menos recomendada. Configure apenas uma das duas credenciais.
 
-### 3. Credencial do servidor (a senha do app, em forma de hash)
-1. No seu computador, abra o arquivo **`ferramentas/gerar-credencial.html`** (funciona offline).
-2. Digite a **senha do aplicativo** e clique em *Gerar*. Copie o valor: é o `APP_PROOF_HASH`.
-   - A senha não fica guardada na Vercel, só esse hash. Ele sozinho **não** dá acesso.
-   - Alternativa mais simples: em vez do hash, cadastrar a própria senha em `APP_PASSWORD`. Funciona igual, mas a senha passa a ficar na Vercel. Use **só uma** das duas.
+Use `SESSION_SECRET` aleatório e independente. Se ele não estiver definido, o backend mantém o comportamento legado de derivar o segredo da credencial, para não invalidar instalações existentes automaticamente.
 
-### 4. Repositório do app
-1. Crie outro repositório no GitHub (ex.: `controler27-app`) e envie para a **raiz** o conteúdo desta pasta (`api/`, `public/`, `ferramentas/`, `package.json`, `vercel.json`, `.gitignore`).
+## Publicação
 
-### 5. Vercel
-1. *Add New → Project* → importe o repositório do app.
-2. *Framework Preset*: **Other**. Deixe *Build Command* e *Output Directory* vazios (o `vercel.json` já define).
-3. Em *Environment Variables*, cadastre:
+1. Extraia o conteúdo da pasta `controler27-app` para a raiz do repositório conectado à Vercel.
+2. Importe o repositório na Vercel com Framework Preset `Other`.
+3. Use `public` como diretório de saída (já definido em `vercel.json`). Não é necessário comando de build.
+4. Cadastre as variáveis de ambiente e publique.
+5. Abra o endereço HTTPS da aplicação.
 
-| Variável | Valor | Obrigatória |
-|---|---|---|
-| `APP_PROOF_HASH` | valor gerado no passo 3 (ou use `APP_PASSWORD`) | Sim |
-| `GITHUB_TOKEN` | token do passo 2 | Sim |
-| `GITHUB_REPO` | `seu-usuario/controler27-dados` | Sim |
-| `SESSION_SECRET` | texto longo e aleatório (assina a sessão) | Recomendada |
-| `GITHUB_BRANCH` | `main` (padrão) | Não |
-| `DB_FILE_PATH` | `controler27_bd.json` (padrão) | Não |
+## Primeiro acesso em cada navegador/dispositivo
 
-4. *Deploy*.
+O perfil local de login é mantido no navegador. Em cada dispositivo, use **Configurar primeiro acesso** para criar o nome e o usuário local. A senha precisa ser a mesma senha que abre o banco criptografado e corresponde à credencial configurada no servidor.
 
-### 6. Primeiro acesso (uma vez em cada navegador/dispositivo)
-O usuário inicial que vinha embutido no HTML foi removido (o HTML agora é público). Por isso, em cada navegador:
-1. Abra o endereço da Vercel e clique em **Configurar primeiro acesso**.
-2. Informe nome, usuário e a **senha do banco** (a mesma de sempre).
-3. O app confere no servidor se essa senha abre o banco existente. Se abrir, o usuário é criado e você entra com ele.
+A senha local antiga de outro dispositivo pode ficar desatualizada depois de uma troca de senha. Após atualizar `APP_PROOF_HASH` na Vercel e fazer redeploy, a aplicação revisada permite validar a nova senha no servidor e atualizar o hash local daquele navegador.
 
-Depois disso, o dia a dia é um login só.
+## Troca de senha — procedimento obrigatório
 
----
+1. Faça um backup JSON completo e guarde-o fora do GitHub.
+2. Faça a troca de senha dentro do aplicativo e aguarde a sincronização terminar.
+3. Copie o novo `APP_PROOF_HASH` apresentado pelo aplicativo.
+4. Atualize `APP_PROOF_HASH` nas variáveis da Vercel e faça redeploy.
+5. Nos demais dispositivos, entre com a nova senha. O aplicativo atualizará o hash local após validação bem-sucedida no servidor.
 
-## Trocar a senha do app
-Ao trocar a senha dentro do app, aparece uma janela com o **novo `APP_PROOF_HASH`**. Copie, atualize a variável na Vercel e faça *Redeploy*.
-Se você esquecer, o servidor passa a recusar os **próximos** logins e o app avisa que os dados ficam só no dispositivo. Corrigir a variável resolve.
+A senha também deriva a chave AES do banco. Se a troca for interrompida ou a sincronização falhar, não apague caches nem backups. Preserve a senha anterior e o backup até confirmar que todos os dispositivos conseguem abrir o banco novo.
 
-## Checklist de teste
-- [ ] Abrir o endereço mostra o login do app (sem dados).
-- [ ] Primeiro acesso com senha errada é recusado.
-- [ ] Depois de entrar, os dados aparecem iguais aos da v1.27.
-- [ ] Criar/editar um lançamento → surge um **commit novo** no repositório de dados.
-- [ ] Outro dispositivo mostra o mesmo dado.
-- [ ] Sem entrar, abrir `seu-site/api/db` retorna **401** (não mostra o banco).
-- [ ] *Sair* volta ao login. Em *Sobre*, a versão é **v2.00b**.
+## Migração de um banco legado sem criptografia
 
----
+Por padrão, o backend revisado **bloqueia leitura e gravação de banco remoto sem criptografia**. Se o arquivo atual no GitHub for um JSON antigo em texto puro, faça a migração controlada:
 
-## O que mudou em relação ao servidor antigo
+1. Baixe uma cópia do arquivo atual do GitHub e guarde-a em local seguro.
+2. Na Vercel, configure temporariamente `ALLOW_LEGACY_PLAINTEXT_DB=true` e faça redeploy.
+3. Abra o aplicativo em HTTPS, conclua o primeiro acesso com a senha correta do banco e aguarde a sincronização automática. O aplicativo reconhece a resposta de migração e grava o envelope criptografado.
+4. Confirme no GitHub que o arquivo agora contém `enc: "aes-gcm-256"`, `iv`, `ksalt` e `data`, sem os arrays financeiros em texto aberto.
+5. Remova `ALLOW_LEGACY_PLAINTEXT_DB` das variáveis da Vercel e faça novo redeploy.
+6. Teste login, leitura e gravação em outro dispositivo.
 
-| v1.27 (servidor Node) | v2.00b (Vercel + GitHub) |
-|---|---|
-| Login no servidor + login no app | **Login único** (o do app) |
-| Usuário inicial embutido no HTML | Removido: "Configurar primeiro acesso" uma vez por navegador |
-| Pasta `backup_automatico` | **Histórico de commits** do arquivo no GitHub |
-| Restauração automática do banco | **Não existe.** Restaure pelo histórico: arquivo no GitHub → *History* → commit bom → *Revert* |
-| `controler27_log.txt` | Logs da Vercel (projeto → *Logs*, filtre por `c27log`); duram pouco |
-| Pasta `Controler27_local` e `.bat` | Removida |
-| Página "Outras páginas da pasta" | Link removido |
+Não mantenha `ALLOW_LEGACY_PLAINTEXT_DB=true` após a migração. Essa variável abre uma exceção temporária para leitura e gravação do formato legado.
 
-Tudo o que roda no navegador continua igual: cálculos, faturas, reembolsos, gráficos, PDF/CSV, backup completo em JSON, cópias automáticas no navegador, modo seguro, auditoria e a trava contra queda brusca.
+Se o arquivo já estiver criptografado, não configure essa variável.
 
-## Limites e boas práticas
-- **Um usuário de servidor** (o dono). Vários usuários com bancos separados não foram implementados.
-- **Tamanho do banco:** a Vercel aceita gravações de até ~4,5 MB.
-- **Sessão do servidor:** cookie de 90 dias, renovado a cada login. Para derrubar todas, troque `SESSION_SECRET`.
-- **Gravações simultâneas:** o servidor recusa versão mais antiga que a do GitHub; o app relê, mescla e reenvia sozinho.
-- **Senha esquecida:** o banco **não pode ser recuperado** (a criptografia é feita no navegador). Guarde a senha em um gerenciador de senhas.
-- Baixe um **backup completo (JSON)** a cada 14 dias e guarde fora do GitHub.
+## Segurança e limites desta revisão
+
+- O aplicativo falha fechado se WebCrypto/AES-GCM não estiver disponível: não envia banco em texto puro como alternativa. Use HTTPS.
+- O backend exige envelope AES-GCM-256 válido nas gravações normais e bloqueia downgrade para texto puro.
+- O backend valida campos e tamanhos do envelope e limita o corpo lido pela API a 4 MiB.
+- A autenticação aplica espera e limitação progressiva por IP em memória da instância. Como funções serverless podem reiniciar ou escalar para várias instâncias, isso é uma proteção complementar, não um rate limit distribuído. Para produção, habilite Vercel Firewall ou um serviço externo de rate limiting.
+- Dados apresentados em templates dinâmicos receberam escape de HTML nos principais campos financeiros e identificadores usados em ações.
+- O cabeçalho `X-Frame-Options: DENY`, `nosniff`, política de referrer e `Cache-Control: no-store` para APIs são mantidos.
+- O aplicativo ainda depende de bibliotecas servidas por CDN. Uma indisponibilidade de CDN pode afetar gráficos, ícones ou exportação PDF.
+- O banco continua sujeito ao limite de tamanho de payload da plataforma Vercel. Mantenha backups externos regulares.
+
+## Testes locais
+
+Requer Node.js 20 ou superior. Na raiz do projeto:
+
+```bash
+npm test
+```
+
+Os testes cobrem comparação constante, validação da prova de senha, assinatura de sessão, bloqueio de API sem autenticação, rejeição de gravação em texto puro, validação de envelope AES e limite do corpo da requisição.
+
+## Checklist após publicar
+
+- [ ] `/api/me` responde sem expor dados do banco.
+- [ ] `/api/db` sem sessão retorna HTTP 401.
+- [ ] Login correto cria cookie `HttpOnly`, `Secure` e `SameSite=Lax`.
+- [ ] Banco remoto está em envelope AES-GCM-256.
+- [ ] Criar/editar um lançamento gera commit no repositório privado.
+- [ ] Outro navegador consegue abrir o mesmo banco com a senha correta.
+- [ ] Troca de senha, atualização de `APP_PROOF_HASH` e login nos outros dispositivos foram testados.
+- [ ] Backup JSON externo foi baixado e guardado.
+
+## Observação sobre dados existentes
+
+Esta revisão não altera IDs, coleções, parcelas ou estrutura interna dos registros financeiros. Mesmo assim, faça backup antes da publicação. A migração de um arquivo legado em texto puro exige o procedimento temporário acima; não habilite a exceção sem necessidade.
