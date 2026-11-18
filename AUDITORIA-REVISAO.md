@@ -1,4 +1,4 @@
-# Relatório de revisão técnica — Controler27 PRO v2.00b
+# Relatório de revisão técnica — Controler27 PRO v2.00c
 
 ## Escopo executado
 
@@ -40,3 +40,10 @@ Os testes cobrem comparação constante, prova de senha, assinatura de sessão, 
 ## Recomendação de implantação
 
 Antes do deploy, baixar um backup JSON completo e manter cópia externa. Se o banco atual já estiver criptografado, não ativar `ALLOW_LEGACY_PLAINTEXT_DB`. Se for um banco legado em texto puro, seguir exatamente o procedimento temporário do `LEIA-ME.md`.
+
+
+## Complemento da versão 2.00c — provisionamento automático por navegador
+
+Foi corrigido o fluxo de autenticação para navegadores sem cadastro local. Quando não existe usuário local armazenado, o login tenta validar a prova derivada da senha no servidor e, em seguida, valida a senha contra o envelope AES-GCM do banco remoto. Se ambas as verificações forem aprovadas (ou se o banco estiver realmente ausente, conforme fluxo de primeiro banco), cria o registro local e inicia a sessão. Em caso de credencial recusada, indisponibilidade, limite de tentativas ou senha incompatível com o envelope, não cria o registro local.
+
+Limitação arquitetural mantida: o username é armazenado localmente por navegador; a autoridade compartilhada do login é a credencial única configurada na Vercel. A implementação permite usar o mesmo username e senha em navegadores diferentes, mas não cria um diretório de usuários centralizado. Testes automatizados e verificações estáticas não substituem teste real de deploy, navegador e sincronização entre dispositivos.

@@ -1,4 +1,4 @@
-# Controler27 PRO v2.00b — pacote revisado (Vercel + GitHub)
+# Controler27 PRO v2.00c — pacote revisado (Vercel + GitHub)
 
 Este pacote mantém a aplicação original e seu formato de banco. As alterações desta revisão concentram-se em segurança, autenticação, validação do banco remoto e testes automatizados.
 
@@ -40,9 +40,9 @@ Use `SESSION_SECRET` aleatório e independente. Se ele não estiver definido, o 
 
 ## Primeiro acesso em cada navegador/dispositivo
 
-O perfil local de login é mantido no navegador. Em cada dispositivo, use **Configurar primeiro acesso** para criar o nome e o usuário local. A senha precisa ser a mesma senha que abre o banco criptografado e corresponde à credencial configurada no servidor.
+O perfil local de login é mantido no navegador. Na versão 2.00c, não é necessário usar **Configurar primeiro acesso** em cada dispositivo: informe o mesmo usuário e a mesma senha já utilizados. O aplicativo valida a senha no servidor e confirma que ela abre o banco criptografado antes de criar automaticamente o perfil local daquele navegador.
 
-A senha local antiga de outro dispositivo pode ficar desatualizada depois de uma troca de senha. Após atualizar `APP_PROOF_HASH` na Vercel e fazer redeploy, a aplicação revisada permite validar a nova senha no servidor e atualizar o hash local daquele navegador.
+A senha local antiga de outro dispositivo pode ficar desatualizada depois de uma troca de senha. Após atualizar `APP_PROOF_HASH` na Vercel e fazer redeploy, a aplicação permite validar a nova senha no servidor e atualizar o hash local daquele navegador.
 
 ## Troca de senha — procedimento obrigatório
 
@@ -104,3 +104,10 @@ Os testes cobrem comparação constante, validação da prova de senha, assinatu
 ## Observação sobre dados existentes
 
 Esta revisão não altera IDs, coleções, parcelas ou estrutura interna dos registros financeiros. Mesmo assim, faça backup antes da publicação. A migração de um arquivo legado em texto puro exige o procedimento temporário acima; não habilite a exceção sem necessidade.
+
+
+## Novidade da versão 2.00c — acesso em novos navegadores
+
+O primeiro acesso em um navegador novo agora é automático: informe o mesmo usuário e a mesma senha já utilizados. O navegador valida a credencial no endpoint de autenticação da Vercel e confirma que a senha abre o envelope criptografado do banco remoto. Somente depois dessas verificações o cadastro local é criado. Não é necessário clicar em “Configurar primeiro acesso”.
+
+O nome de usuário continua sendo um identificador local do login; a autenticação compartilhada no servidor é feita pela prova derivada da senha. Portanto, use exatamente o mesmo usuário e a mesma senha em todos os navegadores. Se o servidor recusar a senha ou ela não abrir o banco, o provisionamento automático é negado e os dados não são sobrescritos.

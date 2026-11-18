@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 process.env.APP_PROOF_HASH = crypto.createHash('sha256').update('sample-proof').digest('hex');
 process.env.SESSION_SECRET = 'test-session-secret-with-enough-entropy';
@@ -113,4 +114,13 @@ test('database endpoint blocks reading legacy plaintext by default', async () =>
     await dbHandler(authedReq('GET'), res);
     assert.equal(res.statusCode, 422);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test('v2.00c provisions a new browser only after shared server and encrypted-bank validation', () => {
+  const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.match(html, /const APP_VERSION = \"v2\.00c\"/);
+  assert.match(html, /const chk = await c27FirstAccessCheck\(pw\)/);
+  assert.match(html, /auto_access_provisioned/);
+  assert.doesNotMatch(html, /Primeiro acesso: clique em ‘Configurar primeiro acesso’/);
 });

@@ -233,7 +233,7 @@
           <div>
             <h1 class="text-base font-extrabold tracking-tight flex items-center gap-1.5 cursor-pointer" onclick="switchTab('resumo')">
               <span>Controler<span class="text-blue-500">27</span></span>
-              <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono uppercase font-bold tracking-wider">V2.00b PRO</span>
+              <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono uppercase font-bold tracking-wider">V2.00c PRO</span>
             </h1>
             
             <!-- MENU SUSPENSO NO NOME DE USUÁRIO -->
@@ -1632,7 +1632,7 @@
         </div>
         <div>
           <p class="text-lg font-extrabold text-theme-main leading-tight">Controler<span class="text-blue-500">27</span> <span class="text-[11px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono uppercase font-bold tracking-wider align-middle">PRO</span></p>
-          <p class="text-xs text-theme-muted font-mono">Versão <strong id="aboutVersion" class="text-blue-400">v2.00b</strong></p>
+          <p class="text-xs text-theme-muted font-mono">Versão <strong id="aboutVersion" class="text-blue-400">v2.00c</strong></p>
           <button type="button" onclick="runDataAudit()" class="mt-2 px-3 py-1.5 rounded-lg bg-theme-subcard border border-theme text-[11px] font-bold text-theme-main hover:border-blue-500/50 cursor-pointer"><i class="fa-solid fa-clipboard-check text-emerald-400 mr-1"></i>Auditar integridade dos dados</button>
         </div>
       </div>
@@ -1682,7 +1682,7 @@
           <div class="text-[11.5px] text-theme-muted space-y-2 mt-2.5 leading-relaxed">
 <p>O acesso tem duas camadas: o <strong class="text-theme-main">login do servidor</strong> (página /login, que identifica você) e o <strong class="text-theme-main">login do aplicativo</strong> (usuário e senha deste navegador). A senha do aplicativo também é a chave que criptografa o banco: <strong class="text-theme-main">não a perca</strong>.</p>
 <p><em>Configurar primeiro acesso</em> só funciona quando o banco do seu usuário ainda não existe no servidor, ou quando a senha digitada realmente abre o banco que já existe. Caso contrário o acesso é negado e a tentativa fica registrada no log.</p>
-<p>Na hospedagem (v2.00b) existe um <strong class="text-theme-main">único login</strong>: o do aplicativo. A mesma senha libera o servidor e abre o banco (o servidor confere apenas uma prova derivada dela, nunca a senha). Ao trocar a senha, atualize <code>APP_PROOF_HASH</code> (ou <code>APP_PASSWORD</code>) na Vercel. O app bloqueia sozinho após um tempo sem uso. Use <em>Sair</em> no menu do usuário para encerrar a sessão.</p></div>
+<p>Na hospedagem (v2.00c) existe um <strong class="text-theme-main">único login</strong>: o do aplicativo. A mesma senha libera o servidor e abre o banco (o servidor confere apenas uma prova derivada dela, nunca a senha). Ao trocar a senha, atualize <code>APP_PROOF_HASH</code> (ou <code>APP_PASSWORD</code>) na Vercel. O app bloqueia sozinho após um tempo sem uso. Use <em>Sair</em> no menu do usuário para encerrar a sessão.</p></div>
         </details>
         <details class="bg-theme-subcard border border-theme rounded-xl p-3">
           <summary class="cursor-pointer text-xs font-bold text-theme-main flex items-center gap-2 select-none"><i class="fa-solid fa-credit-card text-blue-400"></i> 2. Cartões e faturas</summary>
@@ -1730,7 +1730,7 @@
         <details class="bg-theme-subcard border border-theme rounded-xl p-3">
           <summary class="cursor-pointer text-xs font-bold text-theme-main flex items-center gap-2 select-none"><i class="fa-solid fa-file-lines text-indigo-500"></i> 8. Log e cópia local</summary>
           <div class="text-[11.5px] text-theme-muted space-y-2 mt-2.5 leading-relaxed">
-<p>Na hospedagem (v2.00b) o log de uso vai para os <strong class="text-theme-main">Logs da Vercel</strong> (projeto &gt; <em>Logs</em>, filtre por <code>c27log</code>). Registra logins no servidor e falhas, <strong class="text-theme-main">início, fim, duração e tempo ativo de cada sessão</strong>, gravações (tamanho e quantidade de itens), restaurações, registros criados/editados/apagados, pagamentos, reembolsos, importações, erros do navegador e a verificação de inconsistências feita a cada abertura. A Vercel guarda esses logs por pouco tempo.</p>
+<p>Na hospedagem (v2.00c) o log de uso vai para os <strong class="text-theme-main">Logs da Vercel</strong> (projeto &gt; <em>Logs</em>, filtre por <code>c27log</code>). Registra logins no servidor e falhas, <strong class="text-theme-main">início, fim, duração e tempo ativo de cada sessão</strong>, gravações (tamanho e quantidade de itens), restaurações, registros criados/editados/apagados, pagamentos, reembolsos, importações, erros do navegador e a verificação de inconsistências feita a cada abertura. A Vercel guarda esses logs por pouco tempo.</p>
 <p>O log <strong class="text-theme-main">não guarda</strong> descrições, nomes de compradores nem valores.</p>
 <p>O aplicativo continua guardando cópias automáticas no navegador (em <em>Configurações &gt; Backup</em>) e permite baixar o backup completo em JSON.</p></div>
         </details>
@@ -1749,7 +1749,7 @@
 
         <details open class="bg-theme-subcard border border-theme rounded-xl p-3 group">
           <summary class="cursor-pointer text-xs font-bold text-theme-main flex items-center gap-2 select-none">
-            <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono">v2.00b</span>
+            <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono">v2.00c</span>
             Hospedagem na Vercel com banco no GitHub <span class="text-[10px] text-emerald-400 font-semibold ml-auto">atual</span>
           </summary>
           <ul class="text-[11.5px] text-theme-muted space-y-1.5 list-disc pl-5 mt-2.5">
@@ -2252,7 +2252,7 @@
       if (menu) menu.classList.add("hidden");
     });
 
-    const APP_VERSION = "v2.00b";
+    const APP_VERSION = "v2.00c";
     function openAboutModal() {
       const menu = document.getElementById("userDropdownMenu");
       if (menu) menu.classList.add("hidden");
@@ -7188,7 +7188,8 @@
         // iniciais conhecidas. A checagem (cara) roda UMA vez por conta e é lembrada em u.chk.
         let users = loadUsers();
         if (!Array.isArray(users)) users = [];
-        // v2.00b: sem usuário inicial embutido (o HTML é público). Cada navegador faz o "primeiro acesso" uma vez.
+        // v2.00c: usuário local é provisionado automaticamente após validação da credencial
+        // compartilhada no servidor e confirmação de que a senha abre o banco existente.
         const safeUsers = [];
         let changed = false;
         for (const u of users) {
@@ -7304,9 +7305,10 @@
               </div>
               <h1 class="text-xl font-extrabold tracking-tight flex items-center justify-center gap-2">
                 <span>Controler<span class="text-blue-500">27</span></span>
-                <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono uppercase font-bold tracking-wider">V2.00b PRO</span>
+                <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded-md font-mono uppercase font-bold tracking-wider">V2.00c PRO</span>
               </h1>
               <p class="text-xs text-theme-muted mt-1">Gestão inteligente de cartões & faturas</p>
+              <p class="text-[10px] text-emerald-400 mt-1">Use o mesmo usuário e senha em qualquer navegador. O cadastro local é automático.</p>
             </div>
 
             <div>
@@ -7331,8 +7333,6 @@
               <span>Entrar no Sistema</span>
             </button>
 
-            <button id="authSetupBtn" type="button" class="w-full border border-theme text-theme-muted hover:text-theme-main font-semibold py-2 rounded-xl text-xs transition">Configurar primeiro acesso</button>
-
             <div class="pt-2 border-t border-theme/50 text-center text-[10px] text-theme-muted flex items-center justify-center gap-1.5 font-medium">
               <i class="fa-solid fa-shield-halved text-blue-400 text-[11px]"></i>
               <span>Ambiente Protegido • Sessão Criptografada</span>
@@ -7340,7 +7340,6 @@
           </form>`;
         document.body.prepend(d);
         $("authEye").onclick = () => { const p = $("authPass"); p.type = p.type === "password" ? "text" : "password"; };
-        $("authSetupBtn").onclick = buildFirstUserSetup;
         $("authForm").onsubmit = e => { e.preventDefault(); tryLogin(); };
       }
 
@@ -7398,7 +7397,30 @@
               return;
             }
           } else if (!users.length) {
-            err.textContent = "Primeiro acesso: clique em ‘Configurar primeiro acesso’ para criar seu usuário e senha.";
+            // Novo navegador: não exige cadastro manual. O servidor é a autoridade
+            // compartilhada; a senha também precisa abrir o banco criptografado.
+            if (rawUn.length < 3 || /\s/.test(rawUn)) {
+              err.textContent = "Informe o mesmo usuário utilizado no outro navegador (mínimo 3 caracteres, sem espaços).";
+              return;
+            }
+            err.className = "text-xs text-theme-muted min-h-[1rem] font-medium";
+            err.textContent = "Validando credenciais e banco no servidor...";
+            const chk = await c27FirstAccessCheck(pw);
+            if (!chk.ok) {
+              err.className = "text-xs text-rose-400 min-h-[1rem] font-medium";
+              err.textContent = chk.reason || "Não foi possível validar este acesso.";
+              c27Log('auto_access_denied', { code: chk.code, u: rawUn.slice(0, 30) });
+              return;
+            }
+            const hashed = await hashPw(pw);
+            const user = { username: rawUn, name: rawUn, role: "user", chk: 1, ...hashed };
+            saveUsers([user]);
+            me = user;
+            C27.pw = pw;
+            window.__c27UserName = user.name;
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify({ u: user.username, su: window.C27_SERVER_USER || null, exp: Date.now() + 8 * 3600e3 }));
+            c27Log('auto_access_provisioned', { code: chk.code, u: rawUn.slice(0, 30) });
+            enter();
             return;
           }
 
